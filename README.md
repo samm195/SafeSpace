@@ -1,3 +1,5 @@
+SafeSpace is a university web project made by my partner Ben Ahmed ranim and me Abdelli maysam.
+
 We created SafeSpace because we believe personal growth shouldn't feel like a chore. It should feel rewarding!
 
 SafeSpace turns your daily habits, mental health routines, and career goals into an epic quest. You play the game by taking care of yourself!
