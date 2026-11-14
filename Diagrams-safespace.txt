@@ -1,0 +1,681 @@
+Diagrams
+Yes, those 7 sequence diagrams are **absolutely enough** for your *Cahier des Charges*. In software engineering, you don't need a sequence diagram for every single button click. You only need them for the **core logic loops** (Gamification, Auth, File Uploads, AJAX interactions). The ones we outlined cover 100% of the complex requirements expected by your academic supervisor.
+
+Here is the complete, consolidated PlantUML code for your entire project documentation. You can copy and paste each block directly into your editor.
+
+### 1. Integrated Use Case Diagram
+
+This single diagram elegantly replaces the three separate ones by using "Actor Inheritance."
+
+```plantuml
+@startuml SafeSpace_Integrated_UseCase
+left to right direction
+skinparam packageStyle rectangle
+
+actor "Guest" as guest
+actor "User" as user
+actor "Creator" as creator
+actor "Admin" as admin
+
+' Inheritance: Creator and Admin are also Users
+user <|-- creator
+user <|-- admin
+
+rectangle "SafeSpace System" {
+    ' Guest Actions
+    guest -- (Register/Login)
+    
+    ' User Actions
+    user -- (Complete Daily Challenges)
+    user -- (View Statistics & Titles)
+    user -- (Request Creator Status)
+    user -- (Read & Like Articles)
+    user -- (Browse Volunteering)
+    
+    ' Creator Actions
+    creator -- (Create/Manage Articles)
+    creator -- (View Personal Article Stats)
+    
+    ' Admin Actions
+    admin -- (Manage Challenges & Volunteering)
+    admin -- (Approve/Reject Creator Requests)
+    admin -- (Manage Users & Moderate Content)
+    
+    ' Includes (Security)
+    (Complete Daily Challenges) ..> (Authentication) : <<include>>
+    (Create/Manage Articles) ..> (Authentication) : <<include>>
+    (Manage Challenges & Volunteering) ..> (Authentication) : <<include>>
+}
+@enduml
+
+```
+
+---
+
+### 2. Comprehensive Class Diagram
+
+This maps exactly to your relational database structure.
+
+@startuml SafeSpace_Class_Diagram
+skinparam class {
+    BackgroundColor White
+    BorderColor #6c5ce7
+}
+
+class users {
+    + id: int [PK]
+    + full_name: varchar(100)
+    + email: varchar(100)
+    + password: varchar(255)
+    + role: ENUM (admin, creator, user)
+    + points: int
+    + streak: int
+    + freezes: int
+    + last_check_date: date
+    + reset_token: varchar(64)
+    + reset_token_expires_at: datetime
+}
+
+class app_ratings {
+    + id: int [PK]
+    + user_id: int [FK, UNIQUE]
+    + rating: int
+    + created_at: timestamp
+}
+
+class challenges {
+    + id: int [PK]
+    + category: varchar(100)
+    + description: text
+}
+
+class daily_assignments {
+    + id: int [PK]
+    + user_id: int [FK]
+    + challenge_id: int [FK]
+    + assigned_date: date
+    + status: ENUM (pending, completed)
+}
+
+class articles {
+    + id: int [PK]
+    + creator_id: int [FK]
+    + title: varchar(255)
+    + content: text
+    + likes: int
+    + created_at: timestamp
+}
+
+class article_likes {
+    + id: int [PK]
+    + user_id: int [FK]
+    + article_id: int [FK]
+}
+
+class volunteering {
+    + id: int [PK]
+    + title: varchar(255)
+    + description: text
+    + location: varchar(255)
+    + external_link: varchar(255)
+}
+
+class creator_requests {
+    + id: int [PK]
+    + user_id: int [FK]
+    + file_name: varchar(255)
+    + description: text
+    + status: ENUM (pending, approved, rejected)
+}
+
+' Relationships
+users "1" -- "0..1" app_ratings : rates app
+users "1" -- "0..n" daily_assignments : performs
+challenges "1" -- "0..n" daily_assignments : assigned as
+users "1" -- "0..n" articles : writes
+users "1" -- "0..n" article_likes : likes
+articles "1" -- "0..n" article_likes : receives
+users "1" -- "0..n" creator_requests : submits
+users "1" -- "0..n" volunteering : admin manages
+users "1" -- "0..n" challenges : admin manages
+
+@enduml
+
+---
+
+### 3. Sequence Diagrams (The 7 Core Flows)
+
+**A. Quest Generation (Daily System)**
+
+```plantuml
+@startuml Sequence_Quest_Generation
+actor User
+boundary Dashboard as "dashboard.php"
+control PHP_Engine as "PHP Engine"
+database Database
+
+User -> Dashboard : Opens Page
+Dashboard -> PHP_Engine : Request Content
+PHP_Engine -> Database : Check assignments for today
+alt Assignments Exist
+    Database --> PHP_Engine : Return existing tasks
+else Assignments Missing
+    PHP_Engine -> Database : Select 1 random task per category
+    Database --> PHP_Engine : Return tasks
+    PHP_Engine -> Database : Save to daily_assignments
+end
+PHP_Engine --> Dashboard : Render Page with Quests
+Dashboard --> User : Display Quests
+@enduml
+
+```
+
+**B. Quest Completion (AJAX Loop)**
+
+```plantuml
+@startuml Sequence_Quest_Completion
+actor User
+boundary UI as "Dashboard UI"
+control JS as "JavaScript (fetch)"
+control PHP as "dashboard.php (POST)"
+database DB as "Database"
+
+User -> UI : Clicks "Mark as Done"
+UI -> JS : completeQuest(id)
+JS -> PHP : Send AJAX Request
+
+PHP -> DB : Update status to 'completed'
+PHP -> DB : Add +10 XP to User
+PHP -> DB : If 1st task today: Streak +1
+DB --> PHP : Success
+
+PHP -> PHP : Calculate New Title
+PHP --> JS : Return JSON (New XP, Streak, Title)
+
+JS -> UI : Update UI (Animation)
+UI --> User : Feedback: "✔ +10 XP Earned"
+@enduml
+
+```
+
+**C. Streak Penalty Check (The Brain)**
+
+```plantuml
+@startuml Sequence_Streak_Check
+participant User
+participant PHP as "App_Controller"
+participant DB as "Database"
+
+User -> PHP : Logs in
+PHP -> DB : Get last_login_date & freezes
+DB --> PHP : Returns data
+
+alt User missed days
+    PHP -> PHP : Calculate days_missed
+    alt Freezes >= days_missed
+        PHP -> DB : Deduct Freezes
+    else No Freezes left
+        PHP -> DB : Set Streak = 0
+    end
+end
+
+PHP -> DB : Update last_login_date to Today
+PHP --> User : Load Dashboard
+@enduml
+
+```
+
+**D. Creator Request & Notification**
+
+```plantuml
+@startuml Sequence_Creator_Request
+actor User
+boundary "Profile Page" as UI
+control "Request_Handler.php" as PHP
+entity "File Storage" as Disk
+database DB
+entity "Admin Email" as Mail
+
+User -> UI : Uploads Credentials (PDF/Img)
+UI -> PHP : POST Request (File + Desc)
+PHP -> Disk : Store File (unique_name)
+PHP -> DB : Insert Request (status = 'pending')
+PHP -> Mail : Send Notification to Admin
+PHP --> UI : Show "Request Submitted"
+UI --> User : Success Message
+@enduml
+
+```
+
+**E. Article System (Publish & Like)**
+
+```plantuml
+@startuml Sequence_Article_System
+actor Creator
+actor User
+boundary "Article_UI" as UI
+control "Article_Manager.php" as PHP
+database DB
+
+== Publishing ==
+Creator -> UI : Submit Article
+UI -> PHP : POST Data
+PHP -> DB : INSERT INTO articles
+PHP --> UI : "Published"
+
+== Engaging ==
+User -> UI : Clicks "Like"
+UI -> PHP : AJAX Request
+PHP -> DB : INSERT INTO article_likes
+PHP -> DB : UPDATE articles SET likes = likes + 1
+PHP --> UI : Return New Like Count
+UI -> UI : Update UI
+@enduml
+
+```
+
+**F. Admin Management (CRUD Operations)**
+
+```plantuml
+@startuml Sequence_Admin_CRUD
+actor Admin
+boundary "Admin_Panel" as UI
+control "Admin_Controller.php" as PHP
+database DB
+
+Admin -> UI : Add/Edit Entity (Challenge/Volunteer)
+UI -> PHP : POST Data
+PHP -> PHP : Sanitize Input
+PHP -> DB : INSERT / UPDATE / DELETE
+DB --> PHP : Success
+PHP --> UI : Refresh Table View
+UI --> Admin : Confirm Action
+@enduml
+
+```
+
+**G. Password Reset (Security)**
+
+```plantuml
+@startuml Sequence_Password_Reset
+actor User
+boundary "Login_Page" as UI
+control "Auth_Manager.php" as PHP
+database DB
+entity "Email_Service" as Mail
+
+User -> UI : "Forgot Password"
+UI -> PHP : Submit Email
+PHP -> DB : Generate & Save Reset Token
+PHP -> Mail : Send Recovery Link
+Mail -> User : Email Received
+User -> UI : Enter New Password via Link
+UI -> PHP : Validate Token & Update Hash
+PHP -> DB : Save New Password, Clear Token
+PHP --> UI : "Password Reset Successful"
+@enduml
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Explanation
+
+1. Integrated Use Case Diagram
+Purpose: Defines the functional scope and user hierarchies of the system.
+
+Actor Inheritance: Instead of treating roles as separate silos, we use inheritance. The Creator and Admin inherit all basic User functions (like completing challenges), reducing redundancy.
+
+Key Logic: It visually separates "Public" actions (Guest) from "Protected" actions (User/Admin). The <<include>> relationship specifically highlights that Authentication is a mandatory gateway for the core gamification and management features.
+
+2. Class Diagram (Database Schema)
+Purpose: Illustrates the data structure and the relational integrity of the platform.
+
+Normalization: The diagram shows a normalized structure where challenges are separated from user assignments. This allows for a "Pool" of challenges that can be reused daily.
+
+Relationship Mapping: It highlights the One-to-Many relationships (e.g., one user can have many assignments or article likes), which is critical for tracking individual progress and community engagement without duplicating data.
+
+3. Sequence Diagram A: Quest Generation
+Purpose: Explains the "Dynamic Engine" that keeps the platform fresh.
+
+Logic: Every time a user accesses the dashboard, the system performs a check. If it's a new day, the PHP Engine fetches 11 random challenges (one from each distinct category) from the database.
+
+Evolution: This ensures the user never sees the same set of tasks two days in a row, automating the variety that keeps the gamification engaging.
+
+4. Sequence Diagram B: Quest Completion (AJAX)
+Purpose: Demonstrates the modern User Experience (UX) and backend efficiency.
+
+The "No-Refresh" Loop: Using AJAX (JavaScript fetch), the system updates the database and the user's XP/Streak status in the background.
+
+Feedback Loop: The diagram shows how the server returns a JSON response, which the UI uses to trigger reward animations. This makes the app feel "app-like" and responsive rather than a clunky, old-school website.
+
+5. Sequence Diagram C: Streak Penalty Check
+Purpose: Shows the "fairness" logic and the Streak Freeze mechanic.
+
+Automated Maintenance: This flow runs upon login. It compares the current date with the last_login_date.
+
+The Freeze Protection: It highlights the conditional logic where the system prioritizes "Freezes" before resetting a streak to zero, rewarding long-term consistency even if a user misses a day.
+
+6. Sequence Diagram D: Creator Request
+Purpose: Outlines the professional verification process.
+
+Document Handling: This covers the file-upload logic. It shows how credentials move from the User’s computer to the Server Storage while the metadata is saved in the Database.
+
+Communication: It includes the Email Notification trigger, ensuring the Admin is alerted to new applications without having to manually check the dashboard constantly.
+
+7. Sequence Diagram E: Article System
+Purpose: Highlights the interaction between content creators and consumers.
+
+Role Specificity: It distinguishes between the Creator (who has CRUD permissions) and the User (who has "Read and Like" permissions).
+
+Engagement Tracking: It shows how a "Like" increments the counter in real-time, providing immediate social proof and feedback for the content author.
+
+8. Sequence Diagram F: Admin CRUD
+Purpose: Explains how the platform is managed and moderated.
+
+System Control: This illustrates the Admin's ability to manipulate the "Pool" of data (Challenges and Volunteering places).
+
+Security: It emphasizes the Sanitization step—cleaning input before it touches the database—to protect against SQL injection and other vulnerabilities.
+
+9. Sequence Diagram G: Password Reset
+Purpose: Demonstrates the security protocols for account recovery.
+
+Token-Based Security: Instead of sending passwords via email, the system generates a Unique Reset Token with an expiration date.
+
+Integrity: The diagram shows the verification step where the token must match the database before the password hash is updated, ensuring the recovery process cannot be easily hijacked.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Activity diagrams
+
+### 1. Activity Diagram: The Daily Gamification Loop
+
+This represents the absolute core of your application. It tracks the user from login, through the streak/penalty engine, and finally to completing a task.
+
+**Code:**
+
+```plantuml
+@startuml Activity_Daily_Gamification
+skinparam ActivityBackgroundColor #fce4ec
+skinparam ActivityBorderColor #fd79a8
+skinparam ArrowColor #6c5ce7
+
+|User|
+start
+:Log into SafeSpace;
+
+|System Backend|
+:Fetch User Data (last_check_date, freezes, streak);
+if (Missed previous day(s)?) then (Yes)
+  if (Available Freezes >= Days Missed?) then (Yes)
+    :Deduct Freeze(s);
+    :Maintain Streak;
+  else (No)
+    :Reset Streak to 0;
+  endif
+else (No)
+  :Maintain Streak;
+endif
+:Update last_check_date to Today;
+
+:Check daily_assignments table for Today;
+if (Assignments exist for Today?) then (No)
+  :Fetch 11 random challenges (1 per category);
+  :Generate new daily_assignments rows;
+else (Yes)
+endif
+:Render Dashboard UI;
+
+|User|
+:View Daily Challenges;
+:Complete real-life task;
+:Click "Mark as Done";
+
+|System Backend|
+:Update assignment status to 'completed';
+:Add +10 XP to User profile;
+if (First task completed today?) then (Yes)
+  :Increment Streak by 1;
+else (No)
+endif
+:Calculate if New Title is unlocked;
+:Return updated stats via JSON (AJAX);
+
+|User|
+:See UI update (XP bar fills, checkmark appears);
+stop
+@enduml
+
+```
+
+**Explanation for your report:**
+
+> **Purpose:** This diagram maps the primary user journey and the automated gamification engine.
+> **Logic Flow:** By utilizing swimlanes, it clearly separates the frontend User actions from the automated Backend System processes. It visually demonstrates the complexity of the "Penalty Check" (verifying missing days and applying Streak Freezes) occurring instantly upon login before the user ever sees their dashboard. It also illustrates the asynchronous (AJAX) loop of claiming XP without interrupting the user experience.
+
+---
+
+### 2. Activity Diagram: Role Elevation (Creator Request)
+
+This diagram maps the workflow that crosses between three distinct entities: The User, the System, and the Admin. It perfectly covers Requirement 4.1 & 4.6.
+
+**Code:**
+
+```plantuml
+@startuml Activity_Creator_Approval
+skinparam ActivityBackgroundColor #fce4ec
+skinparam ActivityBorderColor #fd79a8
+skinparam ArrowColor #6c5ce7
+
+|User|
+start
+:Navigate to "Request Creator" page;
+:Upload professional credentials (PDF/Image);
+:Submit Application;
+
+|System Backend|
+:Validate file size and extension;
+:Save file to secure storage;
+:Create record in creator_requests (status: 'pending');
+:Trigger Email Notification to Admin;
+
+|User|
+:Receive "Application Submitted" confirmation;
+
+|Admin|
+:Log into Admin Panel;
+:Open "Pending Requests" module;
+:Review User Credentials document;
+if (Credentials Valid?) then (Yes)
+  |System Backend|
+  :Update request status to 'approved';
+  :Change User Role from 'user' to 'creator';
+else (No)
+  |System Backend|
+  :Update request status to 'rejected';
+endif
+
+|Admin|
+:Proceed to next task or Exit;
+stop
+@enduml
+
+```
+
+**Explanation for your report:**
+
+> **Purpose:** This diagram outlines the administrative workflow for verifying mental health professionals and content creators.
+> **Logic Flow:** The swimlanes illustrate the handover of responsibility. The User initiates the process, the System handles the file validation and automated notification, and the Admin provides the final human-decision step. It highlights the platform's role-based access control (RBAC) by showing exactly when and how a standard user is elevated to a Creator.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+User story
+
+ID,Description,User Story,Priority
+US01,User Authentication,"As a user, I want to register and log in with my email and password securely.",High
+US02,Password Recovery,"As a user, I want to reset my forgotten password via a secure email link.",High
+US03,Daily Quest Generation,"As a user, I want to see one random challenge per category on my dashboard every day.",High
+US04,Quest Completion & XP,"As a user, I want to mark a challenge as done to earn 10 XP and see my progress instantly.",High
+US05,Streak & Freeze Logic,"As a user, I want the system to track my daily streak and protect it automatically using ""Freezes"" if I miss a day.",High
+US06,Level & Title Progression,"As a user, I want to see my rank and emoji icon update automatically as I reach new XP thresholds.",Medium
+US07,Profile Management,"As a user, I want to edit my profile details (name, photo) to keep my account up to date.",Medium
+US08,Creator Role Request,"As a regular user, I want to upload my credentials to request an upgrade to the ""Creator"" role.",Medium
+US09,Creator Request Review,"As an admin, I want to review submitted documents to approve or reject Creator applications.",Medium
+US10,Article Publishing,"As a creator, I want to create, edit, and delete educational articles for the community.",Medium
+US11,Article Interaction,"As a user, I want to read articles and ""Like"" them to show appreciation to the creators.",Low
+US12,Progress Visuals,"As a user, I want to see charts of my activity and progress on my profile page.",Low
+US13,Volunteering Directory,"As a user, I want to browse local volunteering opportunities and access their external links.",Low
+US14,Challenge Management,"As an admin, I want to manage the pool of challenges (Add/Edit/Delete) in the database.",Medium
+US15,Volunteering CRUD,"As an admin, I want to manage (Create, Read, Update, Delete) the volunteering listings.",Low
+US16,User Administration,"As an admin, I want to manage user accounts.",Medium
+US17,Platform Statistics,"As an admin or creator, I want to view a dashboard with statistics regarding user engagement and article likes.",Low
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+sprints
+
+### **Sprint 1: The Foundation (Authentication & Identity)**
+
+*Focus: Getting users into the system safely.*
+
+| User Stories | Matching Sequence Diagram |
+| --- | --- |
+| **US01:** User Authentication | **Sequence G:** Password Reset |
+| **US02:** Password Recovery |  |
+| **US07:** Profile Management |  |
+
+**Goal:** Establish the database connection, session management, and the `User` object. By the end of this sprint, a user can log in and see a blank dashboard with their name.
+
+---
+
+### **Sprint 2: The Heart (Gamification Engine)**
+
+*Focus: The "Play" loop that makes SafeSpace unique.*
+
+| User Stories | Matching Sequence Diagrams |
+| --- | --- |
+| **US03:** Daily Quest Generation | **Sequence A:** Quest Generation |
+| **US04:** Quest Completion & XP | **Sequence B:** Quest Completion (AJAX) |
+| **US05:** Streak & Freeze Logic | **Sequence C:** Streak Penalty Check |
+| **US06:** Level & Title Progression |  |
+
+**Goal:** This is your most important sprint. You implement the logic that picks challenges per category and the "Penalty Check" that runs when the user logs in. By the end, the "game" part of your app is fully functional.
+
+---
+
+### **Sprint 3: Community & Content (The Creator Loop)**
+
+*Focus: Expanding the platform with articles and roles.*
+
+| User Stories | Matching Sequence Diagrams |
+| --- | --- |
+| **US08:** Creator Role Request | **Sequence D:** Creator Request |
+| **US09:** Creator Request Review | **Sequence E:** Article System |
+| **US10:** Article Publishing |  |
+| **US11:** Article Interaction |  |
+| **US13:** Volunteering Directory |  |
+
+**Goal:** Move beyond the daily tasks. Implement the file-upload system for creator requests and the logic for publishing and "liking" content.
+
+---
+
+### **Sprint 4: Oversight & Analytics (Admin & Final Polish)**
+
+*Focus: Tools for the owner and visual rewards for the user.*
+
+| User Stories | Matching Sequence Diagram |
+| --- | --- |
+| **US12:** Progress Visuals (Charts) | **Sequence F:** Admin CRUD |
+| **US14:** Challenge Management |  |
+| **US15:** Volunteering CRUD |  |
+| **US16:** User Administration |  |
+| **US17:** Platform Statistics |  |
+
+**Goal:** Finalize the Admin Panel so you can manage the data without touching the database directly. Add the Chart.js (or similar) integration to the User Profile to make the stats look impressive for the jury.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
